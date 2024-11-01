@@ -19,15 +19,33 @@ shift
 
 pull_changes() {
 	local plugin="$1"
+	local branch="$2"
 	local plugin_path="$(plugin_path_helper "$plugin")"
-	cd "$plugin_path" &&
-		GIT_TERMINAL_PROMPT=0 git pull &&
-		GIT_TERMINAL_PROMPT=0 git submodule update --init --recursive
+	(
+		set -e
+
+		cd "$plugin_path"
+		export GIT_TERMINAL_PROMPT=0
+
+		git fetch
+		if [ -n "$branch" ]
+		then
+			git checkout "$branch"
+			if git show-ref --quiet --branches "$branch"
+			then
+				git merge --ff-only
+			fi
+		else
+			git pull
+		fi
+		git submodule update --init --recursive
+	)
 }
 
 update() {
 	local plugin="$1" output
-	output=$(pull_changes "$plugin" 2>&1)
+	local branch="$2"
+	output=$(pull_changes "$plugin" "$branch" 2>&1)
 	if (( $? == 0 )); then
 		echo_ok "  \"$plugin\" update success"
 		echo_ok "$(echo "$output" | sed -e 's/^/    | /')"
@@ -44,9 +62,10 @@ update_all() {
 	for plugin in $plugins; do
 		IFS='#' read -ra plugin <<< "$plugin"
 		local plugin_name="$(plugin_name_helper "${plugin[0]}")"
+		local branch="${plugin[1]}"
 		# updating only installed plugins
 		if plugin_already_installed "$plugin_name"; then
-			update "$plugin_name" &
+			update "$plugin_name" "$branch" &
 		fi
 	done
 	wait
@@ -57,8 +76,9 @@ update_plugins() {
 	for plugin in $plugins; do
 		IFS='#' read -ra plugin <<< "$plugin"
 		local plugin_name="$(plugin_name_helper "${plugin[0]}")"
+		local branch="${plugin[1]}"
 		if plugin_already_installed "$plugin_name"; then
-			update "$plugin_name" &
+			update "$plugin_name" "$branch" &
 		else
 			echo_err "$plugin_name not installed!" &
 		fi
